@@ -40,7 +40,7 @@ fn main() {
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
-    let rom = read("./roms/ibm-logo.ch8").unwrap();
+    let rom = read("./roms/test_opcode.ch8").unwrap();
     let mut cpu = cpu::CPU::new(&rom);
 
     let refresh_rate = time::Duration::from_millis(1000 / 700);
@@ -55,7 +55,10 @@ fn main() {
             }
         }
 
-        cpu.execute_tick().expect("error during tick");
+        for _ in 0..10 {
+            cpu.execute_tick().expect("error during tick");
+        }
+
         draw_screen(&cpu, &mut canvas);
         thread::sleep(refresh_rate)
     }
