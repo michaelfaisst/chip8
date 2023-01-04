@@ -1,10 +1,12 @@
 use crate::font::FONT;
 use rand::Rng;
+use sdl2::keyboard::Keycode;
 
 const RAM_SIZE: usize = 4096;
 const SCREEN_WIDTH: usize = 64;
 const SCREEN_HEIGHT: usize = 32;
 const NUM_REGISTERS: usize = 16;
+const NUM_KEYS: usize = 16;
 
 type Nibbles = (u16, u16, u16, u16);
 
@@ -17,6 +19,7 @@ pub struct CPU {
     delay_timer: u8,
     sound_timer: u8,
     registers: [u16; NUM_REGISTERS],
+    inputs: [bool; NUM_KEYS]
 }
 
 #[derive(Debug)]
@@ -50,6 +53,58 @@ impl CPU {
             delay_timer: 0,
             sound_timer: 0,
             registers: [0u16; NUM_REGISTERS],
+            inputs: [false; NUM_KEYS]
+        }
+    }
+
+    pub fn key_pressed(&mut self, key: Keycode) {
+        let key_index = CPU::get_input_mapping(key);
+
+        match key_index {
+            Some(index) => self.inputs[index] = true,
+            None => {},
+        }
+    }
+
+    pub fn key_released(&mut self, key: Keycode) {
+        let key_index = CPU::get_input_mapping(key);
+
+        match key_index {
+            Some(index) => self.inputs[index] = false,
+            None => {},
+        }
+    }
+
+    pub fn update_timers(&mut self) {
+        if self.delay_timer > 0 {
+            self.delay_timer -= 1;
+        }
+
+        if self.sound_timer > 0 {
+            self.sound_timer -= 1;
+        }
+    }
+
+    fn get_input_mapping(key: Keycode) -> Option<usize> {
+        match key {
+            Keycode::Num1 => Some(0x1),
+            Keycode::Num2 => Some(0x2),
+            Keycode::Num3 => Some(0x3),
+            Keycode::Num4 => Some(0xC),
+            Keycode::Q => Some(0x4),
+            Keycode::W => Some(0x5),
+            Keycode::E => Some(0x6),
+            Keycode::R => Some(0xD),
+            Keycode::A => Some(0x7),
+            Keycode::S => Some(0x8),
+            Keycode::D => Some(0x9),
+            Keycode::F => Some(0xE),
+            Keycode::Z => Some(0xA),
+            Keycode::X => Some(0x0),
+            Keycode::C => Some(0xB),
+            Keycode::V => Some(0xF),
+
+            _ => None
         }
     }
 
@@ -184,16 +239,16 @@ impl CPU {
 
         let reg_x = self.registers[opcode.x as usize]; 
         self.registers[0xF] = reg_x & 0x01;
-        self.registers[opcode.x as usize] = (reg_x >> 1) & 0x0F;
+        self.registers[opcode.x as usize] = (reg_x >> 1) & 0xFF;
     }
 
     fn shift_left(&mut self, opcode: Opcode) {
         // Optional
         // self.registers[opcode.x as usize] = self.registers[opcode.y as usize];
-
+        //
         let reg_x = self.registers[opcode.x as usize]; 
         self.registers[0xF] = (reg_x & 0x80) >> 7; 
-        self.registers[opcode.x as usize] = (reg_x << 1) & 0x0F;
+        self.registers[opcode.x as usize] = (reg_x << 1) & 0xFF;
     }
 
     fn jump_with_offset(&mut self, opcode: Opcode) {
@@ -225,6 +280,50 @@ impl CPU {
         let did_overflow = new_i >= 0x1000;
         self.i = new_i & 0xFFF;
         self.registers[0xF] = if did_overflow { 1 } else { 0 };
+    }
+
+    fn skip_if_key(&mut self, opcode: Opcode, pressed: bool) {
+        let reg_x = self.registers[opcode.x as usize];
+
+        if (pressed && self.inputs[reg_x as usize]) || (!pressed && !self.inputs[reg_x as usize]) {
+            self.pc += 2;
+        }
+    }
+
+    fn font_character(&mut self, opcode: Opcode) {
+        let reg_x = self.registers[opcode.x as usize] as usize;
+        self.i = 0x50 + reg_x * 5;
+    }
+
+    fn wait_for_key(&mut self, opcode: Opcode) {
+        self.pc -= 2;
+
+        for i in 0..self.inputs.len() {
+            if self.inputs[i] {
+                self.registers[opcode.x as usize] = i as u16;
+                break;
+            }
+        }
+    }
+
+    fn binary_coded_decimal_conversion(&mut self, opcode: Opcode) {
+        let reg_x = self.registers[opcode.x as usize];
+
+        self.ram[self.i] = (reg_x / 100) as u8;
+        self.ram[self.i + 1] = (reg_x % 100 / 10) as u8;
+        self.ram[self.i + 2] = ((reg_x % 100) % 10) as u8;
+    }
+
+    fn store_registers_to_memory(&mut self, opcode: Opcode) {
+        for i in 0..(opcode.x as usize) + 1 {
+            self.ram[self.i + i] = self.registers[i] as u8;
+        }
+    }
+
+    fn load_registers_from_memory(&mut self, opcode: Opcode) {
+        for i in 0..(opcode.x as usize) + 1 {
+            self.registers[i] = self.ram[self.i + i] as u16;
+        }
     }
 
     pub fn execute_tick(&mut self) -> Result<(), &str> {
@@ -259,11 +358,17 @@ impl CPU {
             (0xB, _, _, _) => self.jump_with_offset(opcode),
             (0xC, _, _, _) => self.random(opcode),
             (0xD, _, _, _) => self.draw(opcode),
-            // (0xE, ) => implement
+            (0xE, _, 0x9, 0xE) => self.skip_if_key(opcode, true),
+            (0xE, _, 0xA, 0x1) => self.skip_if_key(opcode, false),
             (0xF, _, 0x0, 0x7) => self.copy_delay_timer_to_register(opcode),
+            (0xF, _, 0x0, 0xA) => self.wait_for_key(opcode),
             (0xF, _, 0x1, 0x5) => self.copy_register_to_delay_timer(opcode),
             (0xF, _, 0x1, 0x8) => self.copy_register_to_sound_timer(opcode),
             (0xF, _, 0x1, 0xE) => self.add_to_index(opcode),
+            (0xF, _, 0x2, 0x9) => self.font_character(opcode),
+            (0xF, _, 0x3, 0x3) => self.binary_coded_decimal_conversion(opcode),
+            (0xF, _, 0x5, 0x5) => self.store_registers_to_memory(opcode),
+            (0xF, _, 0x6, 0x5) => self.load_registers_from_memory(opcode),
             _ => ()
         };
 

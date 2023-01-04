@@ -1,12 +1,11 @@
-use core::time;
-use std::{thread, fs::read};
+use std::fs::read;
 
 use sdl2::{event::Event, render::Canvas, video::Window, pixels::Color, rect::Rect};
 
 mod cpu;
 mod font;
 
-const SCALE: u32 = 10;
+const SCALE: u32 = 1;
 
 
 fn draw_screen(cpu: &cpu::CPU, canvas: &mut Canvas<Window>) {
@@ -40,10 +39,8 @@ fn main() {
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
-    let rom = read("./roms/test_opcode.ch8").unwrap();
+    let rom = read("./roms/space_invaders.ch8").unwrap();
     let mut cpu = cpu::CPU::new(&rom);
-
-    let refresh_rate = time::Duration::from_millis(1000 / 700);
 
     'mainloop: loop {
         for evt in event_pump.poll_iter() {
@@ -51,6 +48,12 @@ fn main() {
                 Event::Quit{..} => {
                     break 'mainloop;
                 },
+                Event::KeyDown { keycode: Some(key), .. } => {
+                    cpu.key_pressed(key);
+                },
+                Event::KeyUp { keycode: Some(key), .. } => {
+                    cpu.key_released(key);
+                }
                 _ => ()
             }
         }
@@ -59,7 +62,7 @@ fn main() {
             cpu.execute_tick().expect("error during tick");
         }
 
+        cpu.update_timers();
         draw_screen(&cpu, &mut canvas);
-        thread::sleep(refresh_rate)
     }
 }
