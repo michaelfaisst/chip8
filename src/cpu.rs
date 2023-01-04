@@ -11,8 +11,9 @@ const NUM_KEYS: usize = 16;
 type Nibbles = (u16, u16, u16, u16);
 
 pub struct CPU {
-    ram: [u8; RAM_SIZE],
     pub vram: [[u8; SCREEN_WIDTH]; SCREEN_HEIGHT],
+    pub redraw_needed: bool,
+    ram: [u8; RAM_SIZE],
     stack: Vec<usize>,
     pc: usize,
     i: usize,
@@ -53,7 +54,8 @@ impl CPU {
             delay_timer: 0,
             sound_timer: 0,
             registers: [0u16; NUM_REGISTERS],
-            inputs: [false; NUM_KEYS]
+            inputs: [false; NUM_KEYS],
+            redraw_needed: false
         }
     }
 
@@ -85,6 +87,10 @@ impl CPU {
         }
     }
 
+    pub fn reset_redraw(&mut self) {
+        self.redraw_needed = false;
+    }
+
     fn get_input_mapping(key: Keycode) -> Option<usize> {
         match key {
             Keycode::Num1 => Some(0x1),
@@ -114,6 +120,7 @@ impl CPU {
                 self.vram[i][j] = 0x00;
             }
         } 
+        self.redraw_needed = true;
     }
 
     fn jump(&mut self, opcode: Opcode) {
@@ -169,6 +176,8 @@ impl CPU {
                 }
             }
         }
+
+        self.redraw_needed = true;
     }
 
     fn call_subroutine(&mut self, opcode: Opcode) {

@@ -5,11 +5,11 @@ use sdl2::{event::Event, render::Canvas, video::Window, pixels::Color, rect::Rec
 mod cpu;
 mod font;
 
-const SCALE: u32 = 1;
+const SCALE: u32 = 10;
 
 
 fn draw_screen(cpu: &cpu::CPU, canvas: &mut Canvas<Window>) {
-    canvas.set_draw_color(Color::RGB(0, 0, 0));
+    canvas.set_draw_color(Color::RGB(31, 31, 31));
     canvas.clear();
 
     let vram = cpu.vram;
@@ -63,6 +63,9 @@ fn main() {
         }
 
         cpu.update_timers();
-        draw_screen(&cpu, &mut canvas);
+
+        if cpu.redraw_needed {
+            draw_screen(&cpu, &mut canvas);
+        }
     }
 }
